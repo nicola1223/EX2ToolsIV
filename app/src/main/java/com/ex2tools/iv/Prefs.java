@@ -475,6 +475,14 @@ public final class Prefs {
         get(c).edit().putString("widget_mode_launcher", pkg == null ? "" : pkg).apply();
     }
 
+    public static boolean stockLauncherCardsHidden(Context c) {
+        return get(c).getBoolean("stock_launcher_cards_hidden", false);
+    }
+
+    public static void setStockLauncherCardsHidden(Context c, boolean hidden) {
+        get(c).edit().putBoolean("stock_launcher_cards_hidden", hidden).apply();
+    }
+
     public static int speedMode(Context c) {
         return get(c).getInt("speed_mode", 0) == 1 ? 1 : 0;
     }
@@ -1153,7 +1161,15 @@ public final class Prefs {
     }
 
     public static void setSensorMac(Context c, String value) {
-        get(c).edit().putString("sensor_mac", value == null ? "" : value.trim()).apply();
+        String mac = value == null ? "" : value.trim();
+        if (mac.equalsIgnoreCase(sensorMac(c))) return;
+        get(c).edit().putString("sensor_mac", mac)
+                .remove("sensor_key")
+                .remove("sensor_temp")
+                .remove("sensor_humidity")
+                .remove("sensor_battery")
+                .remove("sensor_at")
+                .apply();
     }
 
     public static String sensorKey(Context c) {
@@ -1166,12 +1182,11 @@ public final class Prefs {
     }
 
     public static void setSensorReading(Context c, float temp, int humidity, int battery, long at) {
-        get(c).edit()
-                .putFloat("sensor_temp", temp)
-                .putInt("sensor_humidity", humidity)
-                .putInt("sensor_battery", battery)
-                .putLong("sensor_at", at)
-                .apply();
+        SharedPreferences.Editor editor = get(c).edit();
+        if (!Float.isNaN(temp)) editor.putFloat("sensor_temp", temp).putLong("sensor_at", at);
+        if (humidity >= 0) editor.putInt("sensor_humidity", humidity);
+        if (battery >= 0) editor.putInt("sensor_battery", battery);
+        editor.apply();
     }
 
     public static float sensorTemp(Context c) {

@@ -335,7 +335,6 @@
                 android:text="@string/climate_title"
                 android:textColor="@color/flyme_label_level1"
                 android:textSize="22sp"
-                android:visibility="gone"
                 app:rowDescription="@string/climate_note" />
 
             <com.ex2tools.iv.ui.FlymeSwitchRow

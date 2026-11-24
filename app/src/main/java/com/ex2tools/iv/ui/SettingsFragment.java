@@ -264,6 +264,7 @@ public final class SettingsFragment extends Fragment {
         switchClimate.setChecked(Prefs.climateEnabled(c));
         switchClimate.setOnCheckedChangeListener((b, checked) -> {
             if (binding) return;
+            if (checked) Prefs.setClimateUiVisible(c, true);
             Prefs.setClimateEnabled(c, checked);
             if (checked) {
                 com.ex2tools.iv.climate.Thermostat.applyTargetNow(c);
@@ -288,7 +289,13 @@ public final class SettingsFragment extends Fragment {
         });
         settingsClimate.setOnClickListener(v -> {
             if (requireActivity() instanceof MainActivity) {
-                ((MainActivity) requireActivity()).openClimate();
+                MainActivity activity = (MainActivity) requireActivity();
+                if (!Prefs.climateUiVisible(c)) {
+                    Prefs.setClimateUiVisible(c, true);
+                    com.ex2tools.iv.service.CabinClimateService.sync(c);
+                    activity.refreshClimateNav();
+                }
+                activity.openClimate();
             }
         });
         updateClimateRow();

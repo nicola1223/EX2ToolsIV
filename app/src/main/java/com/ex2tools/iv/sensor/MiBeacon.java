@@ -1,10 +1,12 @@
 package com.ex2tools.iv.sensor;
 
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.security.GeneralSecurityException;
 import java.util.Arrays;
 
 /**
- * Разбор рекламных пакетов MiBeacon v4/v5 (Xiaomi LYWSD03MMC и совместимые).
+ * Разбор рекламных пакетов MiBeacon v4/v5 (Xiaomi LYWSD03MMC, MJWSD06MMC).
  *
  * Пакет приходит в service data сервиса 0xFE95. Для расшифровки нужен
  * bind key датчика (16 байт) и его MAC.
@@ -45,6 +47,8 @@ public final class MiBeacon {
         boolean capabilityInclude = ((frctrl >> 5) & 1) != 0;
         boolean objectInclude = ((frctrl >> 6) & 1) != 0;
         boolean encrypted = ((frctrl >> 3) & 1) != 0;
+        int productId = (data[2] & 0xff) | ((data[3] & 0xff) << 8);
+        boolean monitor3Mini = productId == 0x55B5 || productId == 0x5BEA;
 
         Reading reading = new Reading();
         reading.raw = data.clone();
@@ -70,7 +74,7 @@ public final class MiBeacon {
                 reading.error = "short frame";
                 return reading;
             }
-            parseObjects(Arrays.copyOfRange(data, index, data.length), reading);
+            parseObjects(Arrays.copyOfRange(data, index, data.length), reading, monitor3Mini);
             return reading;
         }
 
@@ -98,7 +102,7 @@ public final class MiBeacon {
 
         try {
             byte[] plain = AesCcm.decrypt(key, nonce, new byte[]{0x11}, cipher, 4);
-            parseObjects(plain, reading);
+            parseObjects(plain, reading, monitor3Mini);
         } catch (GeneralSecurityException e) {
             reading.error = "decrypt failed";
         } catch (Throwable t) {
@@ -107,7 +111,7 @@ public final class MiBeacon {
         return reading;
     }
 
-    private static void parseObjects(byte[] payload, Reading reading) {
+    private static void parseObjects(byte[] payload, Reading reading, boolean monitor3Mini) {
         if (payload == null) return;
         int pos = 0;
         while (pos + 3 <= payload.length) {
@@ -144,6 +148,18 @@ public final class MiBeacon {
                         reading.tempC = temp / 10f;
                         reading.humidity = hum / 10;
                     }
+                    break;
+                case 0x4C01:
+                    if (monitor3Mini && length == Float.BYTES) {
+                        float temp = ByteBuffer.wrap(value).order(ByteOrder.LITTLE_ENDIAN).getFloat();
+                        if (Float.isFinite(temp)) reading.tempC = temp;
+                    }
+                    break;
+                case 0x4C02:
+                    if (monitor3Mini && length == 1) reading.humidity = value[0] & 0xff;
+                    break;
+                case 0x4803:
+                    if (monitor3Mini && length == 1) reading.battery = value[0] & 0xff;
                     break;
                 default:
                     break;

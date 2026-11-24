@@ -229,11 +229,12 @@ public final class CabinSensor {
     }
 
     public MiBeacon.Reading last() {
-        return last;
+        MiBeacon.Reading reading = last;
+        return reading != null && reading.at == Prefs.sensorAt(app) ? reading : null;
     }
 
     public long ageMs() {
-        MiBeacon.Reading r = last;
+        MiBeacon.Reading r = last();
         if (r == null) {
             r = fromPrefs();
         }
@@ -318,25 +319,30 @@ public final class CabinSensor {
         MiBeacon.Reading reading = MiBeacon.parse(
                 payload, MiBeacon.hex(mac.replace(":", "")), key);
 
-        entry.decoded = reading != null && reading.hasData();
-        if (entry.decoded) entry.tempC = reading.tempC;
         if (reading == null || !reading.hasData()) {
             if (reading != null && reading.error != null) {
                 LogStore.add(app, "cabin sensor: frame error " + reading.error);
             }
             return;
         }
+        entry.decoded = true;
         reading.address = address;
         reading.rssi = result.getRssi();
-        last = reading;
         lastPacketAt = System.currentTimeMillis();
         Prefs.setSensorReading(app, reading.tempC, reading.humidity,
                 reading.battery, reading.at);
+        if (!Float.isNaN(reading.tempC)) {
+            entry.tempC = reading.tempC;
+            reading.humidity = Prefs.sensorHumidity(app);
+            reading.battery = Prefs.sensorBattery(app);
+            last = reading;
+        }
         dispatch(reading);
     }
 
     private void dispatch(MiBeacon.Reading reading) {
         worker.execute(() -> {
+            if (!reading.address.equalsIgnoreCase(Prefs.sensorMac(app))) return;
             for (Listener listener : listeners) {
                 try {
                     listener.onReading(reading);
