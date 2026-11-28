@@ -46,6 +46,7 @@ public final class OverlayWidgetService extends Service {
 
     private static final long POLL_MS = 400L;
     private static final int GRID_STEP_DP = 16;
+    private static final int GRID_INSET_DP = 2;
     private static final int WIDGET_GAP_DP = 8;
     private static final int NEIGHBOR_SNAP_DISTANCE_DP = 24;
     private static final int GLASS_NEIGHBOR_SNAP_DISTANCE_DP = 36;
@@ -374,14 +375,19 @@ public final class OverlayWidgetService extends Service {
                 height = Math.min(maxHeight, Math.max(1, Math.round(base.getHeight() * density() * scale)));
             }
 
+            int gridInset = placement == Prefs.OverlayPlacement.GRID
+                    ? Math.min(dp(GRID_INSET_DP), (Math.min(width, height) - 1) / 2) : 0;
+            container.setPadding(gridInset, gridInset, gridInset, gridInset);
+            int contentWidth = width - gridInset * 2;
+            int contentHeight = height - gridInset * 2;
             View content;
             if (speed) {
                 spec.speedView = new SpeedOverlayView(this);
                 content = spec.speedView.view();
                 spec.speedView.update(this, WidgetsCommon.readSpeed(this), WidgetsCommon.readTripKm(this));
             } else {
-                content = OverlayWidgetViews.create(this, spec.key, scale, width, height);
-                OverlayWidgetViews.update(content, spec.key, width);
+                content = OverlayWidgetViews.create(this, spec.key, scale, contentWidth, contentHeight);
+                OverlayWidgetViews.update(content, spec.key, contentWidth);
             }
             container.addView(content, new FrameLayout.LayoutParams(
                     FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
@@ -400,7 +406,7 @@ public final class OverlayWidgetService extends Service {
                 lp.y = Math.max(0, Math.min(metrics.heightPixels - height, lp.y));
             }
             if (!floatingRange && placement == Prefs.OverlayPlacement.GRID) {
-                snapToGrid(lp);
+                snapToGrid(spec, lp);
             }
             container.setAlpha(1f);
 
@@ -498,17 +504,20 @@ public final class OverlayWidgetService extends Service {
         return tilePitch > 0 ? Math.min(gap, tilePitch - 1) : gap;
     }
 
-    private void snapToGrid(WindowManager.LayoutParams lp) {
+    private void snapToGrid(OverlaySpec dragged, WindowManager.LayoutParams lp) {
         DisplayMetrics metrics = getResources().getDisplayMetrics();
         int step = tilePitch > 0 ? tilePitch : Math.max(1, dp(GRID_STEP_DP));
-        lp.x = gridCoordinate(lp.x, metrics.widthPixels - lp.width, step);
-        lp.y = gridCoordinate(lp.y, metrics.heightPixels - lp.height, step);
-    }
-
-    private static int gridCoordinate(int position, int max, int step) {
-        int nearest = Math.round(Math.max(0, position) / (float) step);
-        int lastVisible = Math.max(0, max) / step;
-        return Math.min(nearest, lastVisible) * step;
+        List<Rect> occupied = new ArrayList<>();
+        for (OverlaySpec spec : specs) {
+            if (spec == dragged || spec.view == null || spec.params == null || isFloatingRange(spec)
+                    || spec.view.getVisibility() != View.VISIBLE) continue;
+            WindowManager.LayoutParams other = spec.params;
+            occupied.add(new Rect(other.x, other.y, other.x + other.width, other.y + other.height));
+        }
+        Rect target = OverlayGridSnap.find(new Rect(lp.x, lp.y, lp.x + lp.width, lp.y + lp.height),
+                occupied, metrics.widthPixels, metrics.heightPixels, step);
+        lp.x = target.left;
+        lp.y = target.top;
     }
 
     private void update(OverlaySpec spec) {
@@ -517,7 +526,8 @@ public final class OverlayWidgetService extends Service {
             if (WidgetsCommon.SIZE_SPEED.equals(spec.key) && spec.speedView != null) {
                 spec.speedView.update(this, WidgetsCommon.readSpeed(this), WidgetsCommon.readTripKm(this));
             } else {
-                OverlayWidgetViews.update(spec.content, spec.key, spec.params.width);
+                int contentWidth = spec.params.width - spec.view.getPaddingLeft() - spec.view.getPaddingRight();
+                OverlayWidgetViews.update(spec.content, spec.key, contentWidth);
             }
             spec.view.setAlpha(1f);
         } catch (Throwable t) {
@@ -668,7 +678,7 @@ public final class OverlayWidgetService extends Service {
             return;
         }
         if (placement == Prefs.OverlayPlacement.GRID || placement == Prefs.OverlayPlacement.NEIGHBORS) {
-            if (placement == Prefs.OverlayPlacement.GRID) snapToGrid(lp);
+            if (placement == Prefs.OverlayPlacement.GRID) snapToGrid(spec, lp);
             else snapToNeighbor(spec, lp);
             try {
                 windowManager.updateViewLayout(container, lp);
